@@ -1,5 +1,5 @@
 #Librerías
-from transformers import BertModel, BertTokenizer, AdamW, get_linear_schedule_with_warmup
+from transformers import BertModel, AdamW, BertTokenizer,  get_linear_schedule_with_warmup
 import torch
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -16,21 +16,19 @@ ruta = './Datasets limpios/'
 RANDOM_SEED = 42
 MAX_LEN = 200
 BATCH_SIZE = 16
-DATASET_1_PATH = ruta + 'dataset_coments_1'
-DATASET_2_PATH = ruta + 'dataset_coments_2'
-DATASET_3_PATH = ruta + 'dataset_coments_3'
-DATASET_4_PATH = ruta + 'dataset_coments_merge'
+DATASET_1_PATH = ruta + 'dataset_coments_1.csv'
+DATASET_2_PATH = ruta + 'dataset_coments_2.csv'
+DATASET_3_PATH = ruta + 'dataset_coments_3.csv'
+DATASET_4_PATH = ruta + 'dataset_coments_merge.csv'
 NCLASSES = 2
 
 np.random.seed(RANDOM_SEED)
 torch.manual_seed(RANDOM_SEED)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print(device)
 
 # Cargar los dataset
 df = pd.read_csv(DATASET_1_PATH)
-print(df.head())
-print(df.shape)
+df = df[:1000]
 # df2 = pd.read_csv(DATASET_2_PATH)
 # df3 = pd.read_csv(DATASET_3_PATH)
 # df4 = pd.read_csv(DATASET_4_PATH)
@@ -64,14 +62,14 @@ class IMDBDataset(Dataset):
             truncation = True,
             add_special_tokens = True,
             return_token_type_ids = False,
-            pad_to_max_length = True,
+            padding = True,
             return_attention_mask = True,
             return_tensors = 'pt'
             )
         
 
         return {
-            'review': originalText,
+            'originalText': originalText,
             'input_ids': encoding['input_ids'].flatten(),
             'attention_mask': encoding['attention_mask'].flatten(),
             'label': torch.tensor(label, dtype=torch.long)
@@ -86,7 +84,7 @@ def data_loader(df, tokenizer, max_len, batch_size):
         max_len = MAX_LEN
     )
 
-    return DataLoader(dataset, batch_size = BATCH_SIZE, num_workers = 4)
+    return DataLoader(dataset, batch_size = BATCH_SIZE, num_workers = 1)
 
 # Dataset dividido 
 df_train, df_test = train_test_split(df, test_size = 0.2, random_state=RANDOM_SEED)
@@ -105,7 +103,8 @@ class BERTSentimentModule(nn.Module):
     def forward(self, input_ids, attention_mask):
         _, cls_output = self.bert(
             input_ids = input_ids,
-            attention_mask = attention_mask
+            attention_mask = attention_mask,
+            return_dict=False
         )
         drop_output = self.drop(cls_output)
         output = self.linear(drop_output)
@@ -132,19 +131,33 @@ def train_model(model, data_loader, loss_fn, optimizer, device, scheduler, n_exa
     losses = []
     correct_predictions = 0
     for batch in data_loader:
+        print(1)
         input_ids = batch['input_ids'].to(device)
+        print(2)
         attention_mask = batch['attention_mask'].to(device)
+        print(3)
         labels = batch['label'].to(device)
+        print(4)
         outputs = model(input_ids = input_ids, attention_mask = attention_mask)
+        print(5)
         _, preds = torch.max(outputs, dim=1)
+        print(6)
         loss = loss_fn(outputs, labels)
+        print(7)
         correct_predictions += torch.sum(preds == labels)
+        print(8)
         losses.append(loss.item())
+        print(9)
         loss.backward()
+        print(10)
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        print(11)
         optimizer.step()
+        print(12)
         scheduler.step()
+        print(13)
         optimizer.zero_grad()
+        print(14)
     return correct_predictions.double()/n_examples, np.mean(losses)
 
 def eval_model(model, data_loader, loss_fn, device, n_examples):
@@ -179,5 +192,5 @@ for epoch in range(EPOCHS):
 
 
 # Guardar el modelo
-model_path = "ruta/donde/guardar/modelo.pth"
+model_path = "./modeloBertEntrenado.pth"
 torch.save(model.state_dict(), model_path)
